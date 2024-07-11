@@ -21,21 +21,67 @@ const mailerSend = new MailerSend({
 
 const sentFrom = new Sender("admin@trial-v69oxl59ezzg785k.mlsender.net", "Invicon");
 
+
 app.post('/register', async (req, res) => {
     const { email, password } = req.body;
     try {
         const user = await FormDataModel.findOne({ email });
         if (user) {
-            res.json("Already registered");
-        } else {
-            const newUser = new FormDataModel(req.body);
-            await newUser.save();
-            res.json(newUser);
+            return res.json("Already registered");
         }
+
+        const verificationCode = crypto.randomBytes(3).toString('hex').toUpperCase();
+        const newUser = new FormDataModel({
+            email,
+            password,
+            verificationCode,
+            verificationCodeExpires: Date.now() + 3600000 // 1 hour
+        });
+        await newUser.save();
+
+        const recipients = [new Recipient(email, "User")];
+        const emailParams = new EmailParams()
+            .setFrom(sentFrom)
+            .setTo(recipients)
+            .setReplyTo(sentFrom)
+            .setSubject("Email Verification")
+            .setHtml(`
+                <p>Thank you for registering with Invicon.</p>
+                <p>Your verification code is: <strong>${verificationCode}</strong></p>
+                <p>Please enter this code on the registration page to complete your sign up.</p>
+            `);
+
+        await mailerSend.email.send(emailParams);
+
+        res.json("Verification email sent");
     } catch (err) {
         res.status(500).json(err);
     }
 });
+
+
+app.post('/verify', async (req, res) => {
+    const { email, verificationCode } = req.body;
+    try {
+        const user = await FormDataModel.findOne({
+            email,
+            verificationCode,
+            verificationCodeExpires: { $gt: Date.now() }
+        });
+        if (!user) {
+            return res.status(400).json("Invalid or expired verification code");
+        }
+
+        user.verificationCode = undefined;
+        user.verificationCodeExpires = undefined;
+        await user.save();
+
+        res.json("Email verified successfully");
+    } catch (err) {
+        res.status(500).json(err);
+    }
+});
+
 
 app.post('/login', async (req, res) => {
     const { email, password } = req.body;
