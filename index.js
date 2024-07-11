@@ -19,7 +19,7 @@ const mailerSend = new MailerSend({
     apiKey: process.env.MAILERSEND_API_KEY,
 });
 
-const sentFrom = new Sender("admin@trial-v69oxl59ezzg785k.mlsender.net", "john");
+const sentFrom = new Sender("admin@trial-v69oxl59ezzg785k.mlsender.net", "Invicon");
 
 app.post('/register', async (req, res) => {
     const { email, password } = req.body;
@@ -114,6 +114,10 @@ app.post('/reset-password', async (req, res) => {
     }
 });
 
+
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname + '/client/build/index.html'));
+  });
 
 
 app.listen(3001, () => {
