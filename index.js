@@ -68,7 +68,7 @@ app.post('/request-password-reset', async (req, res) => {
         user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
         await user.save();
 
-        const resetLink = `http://yourfrontendurl.com/reset-password?token=${token}`;
+        const resetLink = `https://invicon-client.onrender.com/reset-password?token=${token}`;
 
         console.log("Password reset token generated:", token);
 
