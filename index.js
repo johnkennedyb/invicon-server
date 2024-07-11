@@ -68,9 +68,7 @@ app.post('/request-password-reset', async (req, res) => {
         user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
         await user.save();
 
-        const resetLink = `https://invicon-client.onrender.com/reset-password?token=${token}`;
-
-        console.log("Password reset token generated:", token);
+        const resetLink = `https://invicon-client.onrender.com/reset?token=${token}`;
 
         const recipients = [new Recipient(email, "User")];
         const emailParams = new EmailParams()
@@ -94,6 +92,7 @@ app.post('/request-password-reset', async (req, res) => {
 });
 
 
+
 app.post('/reset-password', async (req, res) => {
     const { token, newPassword } = req.body;
     try {
@@ -114,6 +113,7 @@ app.post('/reset-password', async (req, res) => {
         res.status(500).json(err);
     }
 });
+
 
 
 app.listen(3001, () => {
