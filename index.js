@@ -160,6 +160,30 @@ app.post('/reset-password', async (req, res) => {
     }
 });
 
+app.get('/invite/:inviteId', async (req, res) => {
+    const { inviteId } = req.params;
+    try {
+        const user = await FormDataModel.findOne({ inviteLink: `https://example.com/invite/${inviteId}` });
+        if (!user) {
+            return res.status(404).json("Invalid invite link");
+        }
+
+        if (user.inviteUsed) {
+            return res.status(400).json("Invite link already used");
+        }
+
+        user.inviteUsed = true;
+        user.inviteUsedBy = req.query.usedBy; // You can pass the email or user id who used the invite
+        await user.save();
+
+        // Proceed with registration or login
+        res.send('Invite link used. Proceed with registration or login.');
+    } catch (err) {
+        res.status(500).json(err);
+    }
+});
+
+
 
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname + '/client/build/index.html'));
