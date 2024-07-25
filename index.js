@@ -5,6 +5,8 @@ const mongoose = require('mongoose');
 const crypto = require('crypto');
 const { MailerSend, EmailParams, Sender, Recipient } = require('mailersend');
 const FormDataModel = require('./models/FormData');
+const path = require('path'); // Add this line
+
 
 const app = express();
 app.use(express.json());
@@ -160,30 +162,70 @@ app.post('/reset-password', async (req, res) => {
     }
 });
 
-app.get('/invite/:inviteId', async (req, res) => {
-    const { inviteId } = req.params;
+
+
+app.post('/generate-invite', (req, res) => {
+    const { email } = req.body;
+    if (!email) {
+        return res.status(400).json({ error: 'Email is required' });
+    }
     try {
-        const user = await FormDataModel.findOne({ inviteLink: `https://example.com/invite/${inviteId}` });
-        if (!user) {
-            return res.status(404).json("Invalid invite link");
-        }
-
-        if (user.inviteUsed) {
-            return res.status(400).json("Invite link already used");
-        }
-
-        user.inviteUsed = true;
-        user.inviteUsedBy = req.query.usedBy; // You can pass the email or user id who used the invite
-        await user.save();
-
-        // Proceed with registration or login
-        res.send('Invite link used. Proceed with registration or login.');
-    } catch (err) {
-        res.status(500).json(err);
+        const inviteId = Math.random().toString(36).substr(2, 9);
+        const inviteLink = `https://invicon-client.onrender.com/register?inviteId=${inviteId}`; // Ensure this URL matches your frontend
+        res.json({ inviteLink });
+    } catch (error) {
+        console.error('Error generating invite link:', error);
+        res.status(500).json({ error: 'Error generating invite link' });
     }
 });
 
 
+app.get('/invite/:inviteId', async (req, res) => {
+    const { inviteId } = req.params;
+    const { usedBy } = req.query;
+
+    try {
+        const user = await FormDataModel.findOne({ inviteLink: `https://invicon-client.onrender.com/register?inviteId=${inviteId}` });
+        if (!user) {
+            return res.status(404).json({ error: 'Invite not found' });
+        }
+        user.inviteUsed = true;
+        user.inviteUsedBy = usedBy;
+        await user.save();
+        res.json({ message: `Invite ${inviteId} used by ${usedBy}` });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json(err);
+    }
+});
+
+app.get('/invite-data', async (req, res) => {
+    const { email } = req.query;
+    try {
+        const user = await FormDataModel.findOne({ email });
+        if (!user) {
+            return res.status(404).json({ error: 'Invite data not found' });
+        }
+        const inviteCount = await FormDataModel.countDocuments({ inviteUsedBy: email });
+        const inviteData = {
+            invites: inviteCount,
+            tier: calculateTier(inviteCount)
+        };
+        res.json(inviteData);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json(err);
+    }
+});
+
+function calculateTier(inviteCount) {
+    if (inviteCount >= 100) return 5;
+    if (inviteCount >= 70) return 4;
+    if (inviteCount >= 45) return 3;
+    if (inviteCount >= 25) return 2;
+    if (inviteCount >= 12) return 1;
+    return 0;
+}
 
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname + '/client/build/index.html'));
