@@ -1,10 +1,10 @@
+// models/Invite.js
 const mongoose = require('mongoose');
 
-const InviteSchema = new mongoose.Schema({
+const inviteSchema = new mongoose.Schema({
     inviteId: { type: String, required: true, unique: true },
-    generatedBy: { type: String, required: true },
-    inviteUsed: { type: Boolean, default: false },
-    inviteUsedBy: { type: String, default: null }
+    email: { type: String, required: true },
+    usedBy: { type: String, default: null }
 });
 
-module.exports = mongoose.model('Invite', InviteSchema);
+module.exports = mongoose.model('Invite', inviteSchema);

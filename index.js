@@ -5,7 +5,7 @@ const mongoose = require('mongoose');
 const crypto = require('crypto');
 const { MailerSend, EmailParams, Sender, Recipient } = require('mailersend');
 const FormDataModel = require('./models/FormData');
-const InviteModel = require('./models/Invite'); // Assuming you have a separate model for invites
+const InviteModel = require('./models/Invite');
 const path = require('path');
 
 const app = express();
@@ -45,7 +45,7 @@ app.post('/register', async (req, res) => {
         if (inviteId) {
             const invite = await InviteModel.findOne({ inviteId });
             if (invite) {
-                const inviter = await FormDataModel.findOne({ email: invite.generatedBy });
+                const inviter = await FormDataModel.findOne({ email: invite.email });
                 if (inviter) {
                     inviter.inviteCount = (inviter.inviteCount || 0) + 1;
                     await inviter.save();
@@ -172,21 +172,17 @@ app.post('/reset-password', async (req, res) => {
 
 app.post('/generate-invite', async (req, res) => {
     const { email } = req.body;
-    if (!email) {
-        return res.status(400).json({ error: 'Email is required' });
-    }
-    try {
-        const inviteId = crypto.randomBytes(6).toString('hex'); // Unique invite ID
-        const inviteLink = `https://invicon-client.onrender.com/register?inviteId=${inviteId}`;
+    const inviteId = Math.random().toString(36).substr(2, 9);
 
-        // Store inviteId in database
-        const newInvite = new InviteModel({ inviteId, generatedBy: email });
+    try {
+        const newInvite = new InviteModel({
+            inviteId,
+            email,
+        });
         await newInvite.save();
-        
-        res.json({ inviteLink });
-    } catch (error) {
-        console.error('Error generating invite link:', error);
-        res.status(500).json({ error: 'Error generating invite link' });
+        res.json({ inviteLink: `https://invicon-client.onrender.com/register?inviteId=${inviteId}` });
+    } catch (err) {
+        res.status(500).json(err);
     }
 });
 
@@ -199,19 +195,16 @@ app.get('/invite/:inviteId', async (req, res) => {
         if (!invite) {
             return res.status(404).json({ error: 'Invite not found' });
         }
-        invite.inviteUsed = true;
-        invite.inviteUsedBy = usedBy;
-        await invite.save();
-        
-        const inviter = await FormDataModel.findOne({ email: invite.generatedBy });
-        if (inviter) {
-            inviter.inviteCount = (inviter.inviteCount || 0) + 1;
-            await inviter.save();
+
+        if (invite.usedBy) {
+            return res.status(400).json({ error: 'Invite already used' });
         }
-        
-        res.json({ message: `Invite ${inviteId} used by ${usedBy}` });
+
+        invite.usedBy = usedBy;
+        await invite.save();
+
+        res.json({ message: 'Invite used successfully' });
     } catch (err) {
-        console.error(err);
         res.status(500).json(err);
     }
 });
@@ -219,30 +212,21 @@ app.get('/invite/:inviteId', async (req, res) => {
 app.get('/invite-data', async (req, res) => {
     const { email } = req.query;
     try {
-        const user = await FormDataModel.findOne({ email });
-        if (!user) {
-            return res.status(404).json({ error: 'Invite data not found' });
-        }
-        const inviteCount = await FormDataModel.countDocuments({ inviteUsedBy: email });
-        const inviteData = {
-            invites: inviteCount,
-            tier: calculateTier(inviteCount)
-        };
-        res.json(inviteData);
+        const invites = await InviteModel.find({ email, usedBy: { $ne: null } });
+        res.json({ invites: invites.length, tier: calculateTier(invites.length) });
     } catch (err) {
-        console.error(err);
         res.status(500).json(err);
     }
 });
 
-function calculateTier(inviteCount) {
-    if (inviteCount >= 100) return 5;
-    if (inviteCount >= 70) return 4;
-    if (inviteCount >= 45) return 3;
-    if (inviteCount >= 25) return 2;
-    if (inviteCount >= 12) return 1;
+const calculateTier = (invites) => {
+    if (invites >= 100) return 5;
+    if (invites >= 70) return 4;
+    if (invites >= 45) return 3;
+    if (invites >= 25) return 2;
+    if (invites >= 12) return 1;
     return 0;
-}
+};
 
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'client/build/index.html'));
@@ -251,4 +235,3 @@ app.get('*', (req, res) => {
 app.listen(3001, () => {
     console.log("Server listening on http://127.0.0.1:3001");
 });
-
