@@ -5,8 +5,8 @@ const mongoose = require('mongoose');
 const crypto = require('crypto');
 const { MailerSend, EmailParams, Sender, Recipient } = require('mailersend');
 const FormDataModel = require('./models/FormData');
-const path = require('path'); // Add this line
-
+const InviteModel = require('./models/Invite'); // Assuming you have a separate model for invites
+const path = require('path');
 
 const app = express();
 app.use(express.json());
@@ -23,9 +23,8 @@ const mailerSend = new MailerSend({
 
 const sentFrom = new Sender("admin@trial-v69oxl59ezzg785k.mlsender.net", "Invicon");
 
-
 app.post('/register', async (req, res) => {
-    const { email, password } = req.body;
+    const { email, password, inviteId } = req.body;
     try {
         const user = await FormDataModel.findOne({ email });
         if (user) {
@@ -37,9 +36,22 @@ app.post('/register', async (req, res) => {
             email,
             password,
             verificationCode,
-            verificationCodeExpires: Date.now() + 3600000 // 1 hour
+            verificationCodeExpires: Date.now() + 3600000, // 1 hour
+            inviteId // Store the invite ID if available
         });
         await newUser.save();
+
+        // Find the inviter and update their invite count
+        if (inviteId) {
+            const invite = await InviteModel.findOne({ inviteId });
+            if (invite) {
+                const inviter = await FormDataModel.findOne({ email: invite.generatedBy });
+                if (inviter) {
+                    inviter.inviteCount = (inviter.inviteCount || 0) + 1;
+                    await inviter.save();
+                }
+            }
+        }
 
         const recipients = [new Recipient(email, "User")];
         const emailParams = new EmailParams()
@@ -60,7 +72,6 @@ app.post('/register', async (req, res) => {
         res.status(500).json(err);
     }
 });
-
 
 app.post('/verify', async (req, res) => {
     const { email, verificationCode } = req.body;
@@ -83,7 +94,6 @@ app.post('/verify', async (req, res) => {
         res.status(500).json(err);
     }
 });
-
 
 app.post('/login', async (req, res) => {
     const { email, password } = req.body;
@@ -139,8 +149,6 @@ app.post('/request-password-reset', async (req, res) => {
     }
 });
 
-
-
 app.post('/reset-password', async (req, res) => {
     const { token, newPassword } = req.body;
     try {
@@ -162,16 +170,19 @@ app.post('/reset-password', async (req, res) => {
     }
 });
 
-
-
-app.post('/generate-invite', (req, res) => {
+app.post('/generate-invite', async (req, res) => {
     const { email } = req.body;
     if (!email) {
         return res.status(400).json({ error: 'Email is required' });
     }
     try {
-        const inviteId = Math.random().toString(36).substr(2, 9);
-        const inviteLink = `https://invicon-client.onrender.com/register?inviteId=${inviteId}`; // Ensure this URL matches your frontend
+        const inviteId = crypto.randomBytes(6).toString('hex'); // Unique invite ID
+        const inviteLink = `https://invicon-client.onrender.com/register?inviteId=${inviteId}`;
+
+        // Store inviteId in database
+        const newInvite = new InviteModel({ inviteId, generatedBy: email });
+        await newInvite.save();
+        
         res.json({ inviteLink });
     } catch (error) {
         console.error('Error generating invite link:', error);
@@ -179,19 +190,25 @@ app.post('/generate-invite', (req, res) => {
     }
 });
 
-
 app.get('/invite/:inviteId', async (req, res) => {
     const { inviteId } = req.params;
     const { usedBy } = req.query;
 
     try {
-        const user = await FormDataModel.findOne({ inviteLink: `https://invicon-client.onrender.com/register?inviteId=${inviteId}` });
-        if (!user) {
+        const invite = await InviteModel.findOne({ inviteId });
+        if (!invite) {
             return res.status(404).json({ error: 'Invite not found' });
         }
-        user.inviteUsed = true;
-        user.inviteUsedBy = usedBy;
-        await user.save();
+        invite.inviteUsed = true;
+        invite.inviteUsedBy = usedBy;
+        await invite.save();
+        
+        const inviter = await FormDataModel.findOne({ email: invite.generatedBy });
+        if (inviter) {
+            inviter.inviteCount = (inviter.inviteCount || 0) + 1;
+            await inviter.save();
+        }
+        
         res.json({ message: `Invite ${inviteId} used by ${usedBy}` });
     } catch (err) {
         console.error(err);
@@ -228,10 +245,10 @@ function calculateTier(inviteCount) {
 }
 
 app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname + '/client/build/index.html'));
-  });
-
+    res.sendFile(path.join(__dirname, 'client/build/index.html'));
+});
 
 app.listen(3001, () => {
     console.log("Server listening on http://127.0.0.1:3001");
 });
+
